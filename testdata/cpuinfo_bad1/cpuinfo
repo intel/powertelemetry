@@ -1,0 +1,26 @@
+processor       : +
+vendor_id       : IdOfVendor
+cpu family      : 13
+model           : 23
+model name      : NameOfModel
+stepping        : 1
+microcode       : 111
+cpu MHz         : 55.5
+cache size      : 12 KB
+physical id     : 2
+siblings        : 5
+core id         : 66
+cpu cores       : 2
+apicid          : 22
+initial apicid  : 1
+fpu             : no
+fpu_exception   : no
+cpuid level     : 0
+wp              : no
+flags           : no flags
+bugs            : no bugs
+bogomips        : 2.2222
+clflush size    : 64
+cache_alignment : 64
+address sizes   : 10 bits physical, 607 bits virtual
+power management:
