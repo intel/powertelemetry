@@ -71,7 +71,7 @@ linters-settings:
     sections:
       - standard # Standard section: captures all standard packages.
       - default # Default section: contains all imports that could not be matched to another section type.
-      - prefix(github.com/intel-innersource/applications.infrastructure.observability.collectors.powertelemetry) # Custom section: groups all imports with the specified Prefix.
+      - prefix(github.com/intel/powertelemetry) # Custom section: groups all imports with the specified Prefix.
   gocritic:
     # Which checks should be enabled; can't be combined with 'disabled-checks'.
     # See https://go-critic.github.io/overview#checks-overview.
