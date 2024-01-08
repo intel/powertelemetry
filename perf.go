@@ -237,7 +237,10 @@ type eventGroupActivatorImpl struct{}
 // returns a slice of events which have been successfully activated.
 func (*eventGroupActivatorImpl) activateEventsAsGroup(p ev.PlacementProvider, events []ev.CustomizableEvent) ([]*ev.ActiveEvent, error) {
 	activeEventGroup, err := ev.ActivateGroup(p, ev.NewEventTargetProcess(-1, 0), events)
-	return activeEventGroup.Events(), err
+	if err != nil {
+		return nil, err
+	}
+	return activeEventGroup.Events(), nil
 }
 
 // eventsActivator activates a group of core events.

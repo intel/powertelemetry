@@ -8,6 +8,7 @@ package powertelemetry
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/intel/powertelemetry/internal/cpumodel"
@@ -569,13 +570,56 @@ func (pt *PowerTelemetry) GetCPUBusyFrequencyMhz(cpuID int) (float64, error) {
 		(float64(aperfDelta) / float64(mperfDelta)) / (float64(timestampDelta.Nanoseconds()) * fromNanosecondsToSecondsRatio), nil
 }
 
-// UpdatePerCPUMetrics takes a CPU ID and updates the msr storage with offset values corresponding to
+// UpdatePerCPUMetrics takes a CPU ID and updates the msr storage with offset values and deltas corresponding to
 // msr file for CPU ID.
 func (pt *PowerTelemetry) UpdatePerCPUMetrics(cpuID int) error {
 	if pt.msr == nil {
 		return &ModuleNotInitializedError{Name: "msr"}
 	}
-	return pt.msr.update(cpuID)
+
+	if err := pt.msr.update(cpuID); err != nil {
+		return err
+	}
+
+	deltas, err := pt.msr.getOffsetDeltas(cpuID)
+	if err != nil {
+		return fmt.Errorf("error retrieving offset deltas for CPU ID %v: %w", cpuID, err)
+	}
+
+	// MSR offsets needed for CState residencies
+	offsets := []uint32{
+		maxFreqClockCount,
+		c3Residency,
+		c6Residency,
+		c7Residency,
+	}
+
+	deltaSumBig := new(big.Int).SetUint64(0)
+	for _, off := range offsets {
+		v := deltas[off]
+		deltaSumBig.Add(deltaSumBig, new(big.Int).SetUint64(v))
+	}
+
+	if !deltaSumBig.IsUint64() {
+		return fmt.Errorf("sum of deltas caused overflow for CPU ID %v", cpuID)
+	}
+
+	tscDelta := deltas[timestampCounter]
+	deltaSum := deltaSumBig.Uint64()
+
+	if deltaSum <= tscDelta {
+		return nil
+	}
+
+	numBig := new(big.Float).SetUint64(tscDelta)
+	denomBig := new(big.Float).SetUint64(deltaSum)
+	fBig := new(big.Float).Quo(numBig, denomBig)
+
+	if err := pt.msr.scaleOffsetDeltas(cpuID, offsets, fBig); err != nil {
+		return fmt.Errorf("error scaling offset deltas for CPU ID %v: %w", cpuID, err)
+	}
+
+	return nil
 }
 
 // IsFlagSupported takes a flag's value and returns true if first CPU supports it and false if it doesn't.

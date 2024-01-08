@@ -8,6 +8,8 @@ package powertelemetry
 import (
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"path/filepath"
 	"testing"
 	"time"
@@ -433,50 +435,112 @@ func (s *msrTimeSensitiveSuite) TearDownTest() {
 }
 
 func (s *msrTimeSensitiveSuite) TestMsrWithStorageUpdate() {
-	mReg, err := newMsr("testdata/cpu-msr/0", 0)
-	s.Require().NoError(err)
+	s.Run("NegativeOffsetDelta", func() {
+		msrOffsets := []uint32{0x00, 0x02, 0x04}
 
-	m := &msrWithStorage{
-		msrReg:       mReg,
-		offsets:      []uint32{0x00, 0x02, 0x04, 0x05, 0x06, 0x08},
-		offsetValues: map[uint32]uint64{},
-		offsetDeltas: map[uint32]uint64{},
-		timestamp:    fakeClock.Now(),
-	}
+		offsetValuesT1 := map[uint32]uint64{
+			msrOffsets[0]: uint64(0xefcdab8967452301),
+			msrOffsets[1]: uint64(0xdcfeefcdab896745),
+			msrOffsets[2]: uint64(0x98badcfeefcdab89),
+		}
 
-	expectedValues := map[uint32]uint64{
-		0x00: uint64(0xefcdab8967452301),
-		0x02: uint64(0xdcfeefcdab896745),
-		0x04: uint64(0x98badcfeefcdab89),
-		0x05: uint64(0x7698badcfeefcdab),
-		0x06: uint64(0x547698badcfeefcd),
-		0x08: uint64(0x1032547698badcfe),
-	}
+		offsetValuesT2 := map[uint32]uint64{
+			msrOffsets[0]: uint64(0xefcdab8967452300),
+			msrOffsets[1]: uint64(0xdcfeefcdab895745),
+			msrOffsets[2]: uint64(0x98badcfeefcdab89),
+		}
 
-	d1 := 10 * time.Second
-	fakeClock.Add(d1)
+		expectedDeltas := map[uint32]uint64{
+			msrOffsets[0]: 0,
+			msrOffsets[1]: 0,
+			msrOffsets[2]: 0,
+		}
 
-	s.Require().NoError(m.update())
-	s.Require().Equal(expectedValues, m.getOffsetValues())
-	s.Require().Equal(expectedValues, m.getOffsetDeltas())
-	s.Require().Equal(d1, m.getTimestampDelta())
+		mMsrReg := &msrRegMock{}
 
-	expectedDeltas := map[uint32]uint64{
-		0x00: 0,
-		0x02: 0,
-		0x04: 0,
-		0x05: 0,
-		0x06: 0,
-		0x08: 0,
-	}
+		// mock getting CPU ID for msr register
+		mMsrReg.On("getCPUID").Return(1).Twice()
 
-	d2 := 5 * time.Second
-	fakeClock.Add(d2)
+		// mock reading all msr offset values at t1
+		mMsrReg.On("readAll", msrOffsets).Return(offsetValuesT1, nil).Once()
 
-	s.Require().NoError(m.update())
-	s.Require().Equal(expectedValues, m.getOffsetValues())
-	s.Require().Equal(expectedDeltas, m.getOffsetDeltas())
-	s.Require().Equal(d2, m.getTimestampDelta())
+		// mock reading all msr offset values at t2
+		mMsrReg.On("readAll", msrOffsets).Return(offsetValuesT2, nil).Once()
+
+		m := &msrWithStorage{
+			msrReg: mMsrReg,
+
+			offsets:      msrOffsets,
+			offsetValues: map[uint32]uint64{},
+			offsetDeltas: map[uint32]uint64{},
+			timestamp:    fakeClock.Now(),
+		}
+
+		// update at t1
+		d1 := 10 * time.Second
+		fakeClock.Add(d1)
+
+		s.Require().NoError(m.update())
+		s.Require().Equal(offsetValuesT1, m.getOffsetValues())
+		s.Require().Equal(offsetValuesT1, m.getOffsetDeltas())
+		s.Require().Equal(d1, m.getTimestampDelta())
+
+		// update at t2
+		d2 := 5 * time.Second
+		fakeClock.Add(d2)
+
+		s.Require().NoError(m.update())
+		s.Require().Equal(offsetValuesT2, m.getOffsetValues())
+		s.Require().Equal(expectedDeltas, m.getOffsetDeltas())
+		s.Require().Equal(d2, m.getTimestampDelta())
+	})
+
+	s.Run("PositiveOffsetDeltas", func() {
+		mReg, err := newMsr("testdata/cpu-msr/0", 0)
+		s.Require().NoError(err)
+
+		m := &msrWithStorage{
+			msrReg:       mReg,
+			offsets:      []uint32{0x00, 0x02, 0x04, 0x05, 0x06, 0x08},
+			offsetValues: map[uint32]uint64{},
+			offsetDeltas: map[uint32]uint64{},
+			timestamp:    fakeClock.Now(),
+		}
+
+		expectedValues := map[uint32]uint64{
+			0x00: uint64(0xefcdab8967452301),
+			0x02: uint64(0xdcfeefcdab896745),
+			0x04: uint64(0x98badcfeefcdab89),
+			0x05: uint64(0x7698badcfeefcdab),
+			0x06: uint64(0x547698badcfeefcd),
+			0x08: uint64(0x1032547698badcfe),
+		}
+
+		d1 := 10 * time.Second
+		fakeClock.Add(d1)
+
+		s.Require().NoError(m.update())
+		s.Require().Equal(expectedValues, m.getOffsetValues())
+		s.Require().Equal(expectedValues, m.getOffsetDeltas())
+		s.Require().Equal(d1, m.getTimestampDelta())
+
+		expectedDeltas := map[uint32]uint64{
+			0x00: 0,
+			0x02: 0,
+			0x04: 0,
+			0x05: 0,
+			0x06: 0,
+			0x08: 0,
+		}
+
+		d2 := 5 * time.Second
+		fakeClock.Add(d2)
+
+		s.Require().NoError(m.update())
+		s.Require().Equal(expectedValues, m.getOffsetValues())
+		s.Require().Equal(expectedDeltas, m.getOffsetDeltas())
+		s.Require().Equal(d2, m.getTimestampDelta())
+	})
 }
 
 func TestMsrTimeSensitive(t *testing.T) {
@@ -983,6 +1047,96 @@ func TestMsrDataWithStorageGetOffsetDeltas(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, deltasExp, deltasOut)
 	})
+}
+
+func TestMsrDataWithStorageScaleOffsetDeltas(t *testing.T) {
+	testCases := []struct {
+		name            string
+		cpuID           int
+		offsetDeltasMap map[uint32]uint64
+		num             uint64
+		denom           uint64
+
+		scaledOffsetDeltasMap map[uint32]uint64
+		err                   error
+	}{
+		{
+			name:  "CPUIDNotFound",
+			cpuID: 100,
+			offsetDeltasMap: map[uint32]uint64{
+				0x00: 15000,
+			},
+			num:   10,
+			denom: 100,
+			err:   errors.New("could not find MSR register for CPU ID: 100"),
+		},
+		{
+			name: "ScalingFactorCloseToOne",
+			offsetDeltasMap: map[uint32]uint64{
+				0x01: 100000,
+			},
+			num:   math.MaxUint64 - 1000,
+			denom: math.MaxUint64,
+			scaledOffsetDeltasMap: map[uint32]uint64{
+				0x01: 99999,
+			},
+		},
+		{
+			name: "ScalingFactorCloseToOneAndBigOffsetDeltas",
+			offsetDeltasMap: map[uint32]uint64{
+				0x01: math.MaxUint64,
+			},
+			num:   math.MaxUint64 - 1,
+			denom: math.MaxUint64,
+			scaledOffsetDeltasMap: map[uint32]uint64{
+				0x01: math.MaxUint64 - 1,
+			},
+		},
+		{
+			name: "SmallScalingFactor",
+			offsetDeltasMap: map[uint32]uint64{
+				0x01: 10000000000,
+			},
+			num:   1,
+			denom: 100000000,
+			scaledOffsetDeltasMap: map[uint32]uint64{
+				0x01: 100,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			msrOffsets := make([]uint32, 0, len(tc.offsetDeltasMap))
+			for offset := range tc.offsetDeltasMap {
+				msrOffsets = append(msrOffsets, offset)
+			}
+
+			m := &msrDataWithStorage{
+				msrMap: map[int]msrRegWithStorage{
+					0: &msrWithStorage{
+						offsets:      msrOffsets,
+						offsetDeltas: tc.offsetDeltasMap,
+					},
+				},
+			}
+
+			numBig := new(big.Float).SetUint64(tc.num)
+			denomBig := new(big.Float).SetUint64(tc.denom)
+			fBig := new(big.Float).Quo(numBig, denomBig)
+
+			err := m.scaleOffsetDeltas(tc.cpuID, msrOffsets, fBig)
+			if tc.err != nil {
+				require.ErrorContains(t, err, tc.err.Error())
+			} else {
+				require.NoError(t, err)
+
+				offsetDeltasOutMap, err := m.getOffsetDeltas(tc.cpuID)
+				require.NoError(t, err)
+				require.Equal(t, tc.scaledOffsetDeltasMap, offsetDeltasOutMap)
+			}
+		})
+	}
 }
 
 func (s *msrTimeSensitiveSuite) TestMsrDataWithStorageGetTimestampDelta() {

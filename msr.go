@@ -10,11 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"time"
+
+	"github.com/intel/powertelemetry/internal/log"
 )
 
 const (
@@ -216,6 +219,9 @@ type msrRegWithStorage interface {
 	// the previous read operation.
 	getOffsetDeltas() map[uint32]uint64
 
+	// setOffsetDeltas sets the given map of offset key and delta offset values to the receiver.
+	setOffsetDeltas(offsets map[uint32]uint64)
+
 	// getTimestampDelta gets the timestamp delta between the last offset values reading operation
 	// and its previous reading operation.
 	getTimestampDelta() time.Duration
@@ -284,7 +290,7 @@ func (m *msrWithStorage) setOffsetDeltas(offsetDeltas map[uint32]uint64) {
 // update performs reading operations along the offsets specified by the receiver. It updates
 // last read offset values and delta offset values of the receiver.
 func (m *msrWithStorage) update() error {
-	latest, err := m.readAll(m.offsets)
+	latest, err := m.msrReg.readAll(m.offsets)
 	if err != nil {
 		return err
 	}
@@ -296,7 +302,12 @@ func (m *msrWithStorage) update() error {
 	prev := m.getOffsetValues()
 	deltasMap := make(map[uint32]uint64, len(latest))
 	for offset := range latest {
-		deltasMap[offset] = latest[offset] - prev[offset]
+		if latest[offset] < prev[offset] {
+			deltasMap[offset] = 0
+			log.Warnf("A negative delta for the offset 0x%X and CPU ID %v", offset, m.msrReg.getCPUID())
+		} else {
+			deltasMap[offset] = latest[offset] - prev[offset]
+		}
 	}
 
 	m.setOffsetDeltas(deltasMap)
@@ -314,6 +325,7 @@ func (m *msrWithStorage) getTimestampDelta() time.Duration {
 // MSR offset values, read and store multiple MSR offset values, and eventually provide the MSR delta
 // offset values between latest and its previous reading operation.
 type msrReaderWithStorage interface {
+	// initMsrMap initializes a map of CPU ID key and MSR register value with storage.
 	initMsrMap(cpuIDs []int, timeout time.Duration) error
 
 	// isMsrLoaded check if MSR kernel module is loaded.
@@ -327,6 +339,10 @@ type msrReaderWithStorage interface {
 
 	// getOffsetDeltas takes a CPU ID and returns MSR delta offset values between latest and its previous reading operation.
 	getOffsetDeltas(cpuID int) (map[uint32]uint64, error)
+
+	// scaleOffsetDeltas takes a CPU ID and a slice of msr offsets. It scales all offset deltas of the msr storage by multiplying
+	// each offset delta by the given factor f.
+	scaleOffsetDeltas(cpuID int, offsets []uint32, f *big.Float) error
 
 	// getTimestampDelta takes a CPU ID and returns the time interval between the last offset value reading operation
 	// and its previous reading operation.
@@ -461,6 +477,28 @@ func (m *msrDataWithStorage) getOffsetDeltas(cpuID int) (map[uint32]uint64, erro
 		return nil, fmt.Errorf("could not find MSR register for CPU ID: %v", cpuID)
 	}
 	return reg.getOffsetDeltas(), nil
+}
+
+// scaleOffsetDeltas takes a CPU ID and a slice of msr offsets. It scales all offset deltas of the msr storage by multiplying
+// each offset delta by the given factor f.
+func (m *msrDataWithStorage) scaleOffsetDeltas(cpuID int, offsets []uint32, f *big.Float) error {
+	reg, ok := m.msrMap[cpuID]
+	if !ok {
+		return fmt.Errorf("could not find MSR register for CPU ID: %v", cpuID)
+	}
+
+	deltas := reg.getOffsetDeltas()
+	for _, offset := range offsets {
+		if v, ok := deltas[offset]; ok {
+			deltaBig := new(big.Float).SetUint64(v)
+			scaledDeltaBig := new(big.Float).Mul(deltaBig, f)
+			scaledDelta, _ := scaledDeltaBig.Uint64()
+			deltas[offset] = scaledDelta
+		}
+	}
+
+	reg.setOffsetDeltas(deltas)
+	return nil
 }
 
 // getTimestampDelta takes a CPU ID and returns the time interval between the last offset value reading
