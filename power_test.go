@@ -8,6 +8,8 @@ package powertelemetry
 import (
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"testing"
 	"time"
 
@@ -16,41 +18,6 @@ import (
 
 	"github.com/intel/powertelemetry/internal/cpumodel"
 )
-
-// msrMock represents a mock for msrDataWithStorage type. Implements msrReaderWithStorage interface.
-type msrMock struct {
-	mock.Mock
-}
-
-func (m *msrMock) initMsrMap(cpuIDs []int, timeout time.Duration) error {
-	args := m.Called(cpuIDs, timeout)
-	return args.Error(0)
-}
-
-func (m *msrMock) read(offset uint32, cpuID int) (uint64, error) {
-	args := m.Called(offset, cpuID)
-	return args.Get(0).(uint64), args.Error(1)
-}
-
-func (m *msrMock) isMsrLoaded(modulesPath string) (bool, error) {
-	args := m.Called(modulesPath)
-	return args.Bool(0), args.Error(1)
-}
-
-func (m *msrMock) update(cpuID int) error {
-	args := m.Called(cpuID)
-	return args.Error(0)
-}
-
-func (m *msrMock) getOffsetDeltas(cpuID int) (map[uint32]uint64, error) {
-	args := m.Called(cpuID)
-	return args.Get(0).(map[uint32]uint64), args.Error(1)
-}
-
-func (m *msrMock) getTimestampDelta(cpuID int) (time.Duration, error) {
-	args := m.Called(cpuID)
-	return args.Get(0).(time.Duration), args.Error(1)
-}
 
 type coreFreqMock struct {
 	mock.Mock
@@ -1737,7 +1704,7 @@ func TestGetCPUC1StateResidency(t *testing.T) {
 		}
 
 		out, err := pt.GetCPUC1StateResidency(cpuID)
-		require.Equal(t, expectedResult, out)
+		require.InDelta(t, expectedResult, out, 0.1)
 		require.NoError(t, err)
 		m.AssertExpectations(t)
 	})
@@ -2992,7 +2959,10 @@ func TestUpdatePerCPUMetrics(t *testing.T) {
 	t.Run("FailedToUpdate", func(t *testing.T) {
 		cpuID := 0
 		errExpected := errors.New("error while updating storage")
+
 		m := &msrMock{}
+
+		// mock updating offset deltas.
 		m.On("update", cpuID).Return(errExpected).Once()
 
 		pt := &PowerTelemetry{
@@ -3004,17 +2974,185 @@ func TestUpdatePerCPUMetrics(t *testing.T) {
 		m.AssertExpectations(t)
 	})
 
-	t.Run("Updated", func(t *testing.T) {
+	t.Run("FailedToGetDeltas", func(t *testing.T) {
 		cpuID := 0
 		m := &msrMock{}
+
+		// mock updating offset deltas.
 		m.On("update", cpuID).Return(nil).Once()
+
+		// mock getting offset deltas.
+		m.On("getOffsetDeltas", cpuID).Return(nil, errors.New("mock error")).Once()
 
 		pt := &PowerTelemetry{
 			msr: m,
 		}
 
 		err := pt.UpdatePerCPUMetrics(cpuID)
+		require.ErrorContains(t, err, fmt.Sprintf("error retrieving offset deltas for CPU ID %v", cpuID))
+		m.AssertExpectations(t)
+	})
+
+	t.Run("SumDeltasOverflow", func(t *testing.T) {
+		cpuID := 0
+		m := &msrMock{}
+
+		// mock updating offset deltas.
+		m.On("update", cpuID).Return(nil).Once()
+
+		// mock getting offset deltas.
+		m.On("getOffsetDeltas", cpuID).Return(
+			map[uint32]uint64{
+				timestampCounter:  300,
+				maxFreqClockCount: math.MaxUint64,
+				c3Residency:       1,
+				c6Residency:       0,
+				c7Residency:       0,
+			}, nil,
+		).Once()
+
+		pt := &PowerTelemetry{
+			msr: m,
+		}
+
+		err := pt.UpdatePerCPUMetrics(cpuID)
+		require.ErrorContains(t, err, fmt.Sprintf("sum of deltas caused overflow for CPU ID %v", cpuID))
+		m.AssertExpectations(t)
+	})
+
+	t.Run("FailedToScale", func(t *testing.T) {
+		cpuID := 0
+		m := &msrMock{}
+
+		// mock updating offset deltas.
+		m.On("update", cpuID).Return(nil).Once()
+
+		// mock getting offset deltas.
+		m.On("getOffsetDeltas", cpuID).Return(
+			map[uint32]uint64{
+				timestampCounter:  300,
+				maxFreqClockCount: 300,
+				c3Residency:       100,
+				c6Residency:       100,
+				c7Residency:       100,
+			}, nil,
+		).Once()
+
+		sumDeltaBig := new(big.Float).SetUint64(600)
+		tscDeltaBig := new(big.Float).SetUint64(300)
+		fBig := new(big.Float).Quo(tscDeltaBig, sumDeltaBig)
+
+		// mock scaling offset deltas.
+		m.On("scaleOffsetDeltas", cpuID, []uint32{
+			maxFreqClockCount,
+			c3Residency,
+			c6Residency,
+			c7Residency,
+		}, fBig).Return(errors.New("mock error")).Once()
+
+		pt := &PowerTelemetry{
+			msr: m,
+		}
+
+		err := pt.UpdatePerCPUMetrics(cpuID)
+		require.ErrorContains(t, err, fmt.Sprintf("error scaling offset deltas for CPU ID %v", cpuID))
+		m.AssertExpectations(t)
+	})
+
+	t.Run("WithoutScalingDeltas", func(t *testing.T) {
+		cpuID := 0
+		msrOffsets := []uint32{
+			timestampCounter,
+			maxFreqClockCount,
+			c3Residency,
+			c6Residency,
+			c7Residency,
+		}
+
+		offsetDeltas := map[uint32]uint64{
+			timestampCounter:  500,
+			maxFreqClockCount: 100,
+			c3Residency:       100,
+			c6Residency:       100,
+			c7Residency:       100,
+		}
+
+		m := &msrRegMock{}
+
+		// mock reading all msr offset values.
+		m.On("readAll", msrOffsets).Return(offsetDeltas, nil).Once()
+
+		pt := &PowerTelemetry{
+			msr: &msrDataWithStorage{
+				msrMap: map[int]msrRegWithStorage{
+					cpuID: &msrWithStorage{
+						msrReg: m,
+
+						offsets:      msrOffsets,
+						offsetValues: map[uint32]uint64{},
+						offsetDeltas: map[uint32]uint64{},
+					},
+				},
+			},
+		}
+
+		require.NoError(t, pt.UpdatePerCPUMetrics(cpuID))
+
+		offsetDeltasOut, err := pt.msr.getOffsetDeltas(cpuID)
 		require.NoError(t, err)
+		require.Equal(t, offsetDeltas, offsetDeltasOut)
+		m.AssertExpectations(t)
+	})
+
+	t.Run("WithScaledDeltas", func(t *testing.T) {
+		cpuID := 0
+		msrOffsets := []uint32{
+			timestampCounter,
+			maxFreqClockCount,
+			c3Residency,
+			c6Residency,
+			c7Residency,
+		}
+
+		offsetDeltas := map[uint32]uint64{
+			timestampCounter:  300,
+			maxFreqClockCount: 300,
+			c3Residency:       100,
+			c6Residency:       100,
+			c7Residency:       100,
+		}
+
+		m := &msrRegMock{}
+
+		// mock reading all msr offset values.
+		m.On("readAll", msrOffsets).Return(offsetDeltas, nil).Once()
+
+		pt := &PowerTelemetry{
+			msr: &msrDataWithStorage{
+				msrMap: map[int]msrRegWithStorage{
+					cpuID: &msrWithStorage{
+						msrReg: m,
+
+						offsets:      msrOffsets,
+						offsetValues: map[uint32]uint64{},
+						offsetDeltas: map[uint32]uint64{},
+					},
+				},
+			},
+		}
+
+		require.NoError(t, pt.UpdatePerCPUMetrics(cpuID))
+
+		offsetDeltasOut, err := pt.msr.getOffsetDeltas(cpuID)
+		require.NoError(t, err)
+		require.Equal(t, map[uint32]uint64{
+			timestampCounter:  300,
+			maxFreqClockCount: 150,
+			c3Residency:       50,
+			c6Residency:       50,
+			c7Residency:       50,
+		}, offsetDeltasOut)
+
 		m.AssertExpectations(t)
 	})
 }

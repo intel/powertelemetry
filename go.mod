@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/intel/iaevents v1.1.0
 	github.com/jmhodges/clock v1.2.0
-	github.com/shirou/gopsutil/v3 v3.23.10
+	github.com/shirou/gopsutil/v3 v3.23.11
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/sync v0.5.0
 )
@@ -22,6 +22,6 @@ require (
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
-	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/sys v0.15.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
