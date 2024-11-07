@@ -494,6 +494,7 @@ func TestGetBusClock(t *testing.T) {
 		0x8F, // INTEL_FAM6_SAPPHIRERAPIDS_X
 		0xCF, // INTEL_FAM6_EMERALDRAPIDS_X
 		0xAD, // INTEL_FAM6_GRANITERAPIDS_X
+		0xAE, // INTEL_FAM6_GRANITERAPIDS_D
 		0x8A, // INTEL_FAM6_LAKEFIELD
 		0x97, // INTEL_FAM6_ALDERLAKE
 		0x9A, // INTEL_FAM6_ALDERLAKE_L
@@ -829,7 +830,7 @@ func TestGetCPUTemperature(t *testing.T) {
 	t.Run("ModelNotSupported", func(t *testing.T) {
 		cpuID := 0
 		// CPU temp metric not supported by this model.
-		cpuModel := cpumodel.INTEL_FAM6_GRANITERAPIDS_D
+		cpuModel := cpumodel.INTEL_FAM6_CORE_YONAH
 
 		tempExp := uint64(0)
 
