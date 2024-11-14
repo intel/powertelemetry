@@ -235,6 +235,7 @@ func (pt *PowerTelemetry) getBusClock(model int) (float64, error) {
 		cpumodel.INTEL_FAM6_SAPPHIRERAPIDS_X,
 		cpumodel.INTEL_FAM6_EMERALDRAPIDS_X,
 		cpumodel.INTEL_FAM6_GRANITERAPIDS_X,
+		cpumodel.INTEL_FAM6_GRANITERAPIDS_D,
 		cpumodel.INTEL_FAM6_LAKEFIELD,
 		cpumodel.INTEL_FAM6_ALDERLAKE,
 		cpumodel.INTEL_FAM6_ALDERLAKE_L,
