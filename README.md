@@ -267,7 +267,7 @@ The following processor properties are required by the library:
 
 ### Initialization
 
-`powertelemetry` library implements optional builder pattern. It allows the user to specify configuration parameters, and the dependencies to initalize needed to provide metrics information via `WithX` exported functions.
+`powertelemetry` library implements optional builder pattern. It allows the user to specify configuration parameters, and the dependencies to initialize needed to provide metrics information via `WithX` exported functions.
 
 ```go
 ptel, err := New(opts...)
