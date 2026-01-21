@@ -67,13 +67,19 @@ func WithIncludedCPUs(cpuIDs []int) Option {
 }
 
 // WithMsr returns a function closure that initializes the msrBuilder struct of a builder with the default configuration.
-func WithMsr() Option {
+func WithMsr(basePath ...string) Option {
+	var path string
+	if len(basePath) != 0 {
+		path = basePath[0]
+	} else {
+		path = defaultMsrBasePath
+	}
 	return func(b *powerBuilder) {
 		if b.msr == nil {
 			b.msr = &msrBuilder{
 				msrReaderWithStorage: &msrDataWithStorage{
 					msrOffsets: cStateOffsets,
-					msrPath:    defaultMsrBasePath,
+					msrPath:    path,
 				},
 			}
 		}
@@ -82,13 +88,19 @@ func WithMsr() Option {
 
 // WithMsrTimeout returns a function closure that initializes the msrBuilder struct of a builder with the default configuration
 // and given msr read timeout.
-func WithMsrTimeout(timeout time.Duration) Option {
+func WithMsrTimeout(timeout time.Duration, basePath ...string) Option {
+	var path string
+	if len(basePath) != 0 {
+		path = basePath[0]
+	} else {
+		path = defaultMsrBasePath
+	}
 	return func(b *powerBuilder) {
 		if b.msr == nil {
 			b.msr = &msrBuilder{
 				msrReaderWithStorage: &msrDataWithStorage{
 					msrOffsets: cStateOffsets,
-					msrPath:    defaultMsrBasePath,
+					msrPath:    path,
 				},
 			}
 		}
@@ -157,6 +169,23 @@ func WithPerf(jsonFile string) Option {
 			},
 			jsonPath: jsonFile,
 			events:   cStatePerfEvents,
+		}
+	}
+}
+
+// WithTopology returns a function closure that initializes the topologyBuilder struct of a builder with the default configuration.
+func WithTopology(basePath ...string) Option {
+	var path string
+	if len(basePath) != 0 {
+		path = basePath[0]
+	} else {
+		path = defaultDieBasePath
+	}
+	return func(b *powerBuilder) {
+		b.topology = &topologyBuilder{
+			topologyReader: &topologyData{
+				dieIDPath: path,
+			},
 		}
 	}
 }
