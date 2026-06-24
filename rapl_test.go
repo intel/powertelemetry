@@ -214,13 +214,6 @@ func TestPackageZoneGetPackageID(t *testing.T) {
 			err:          errors.New("invalid package domain zone path \"rapl:0\""),
 		},
 		{
-			name:         "PackageIDMismatch",
-			zoneName:     "package-1",
-			zonePath:     "intel-rapl:0",
-			packageIDExp: 0,
-			err:          errors.New("package ID mismatch between zone path \"intel-rapl:0\" and zone name \"package-1\""),
-		},
-		{
 			name:         "PackageNameWithLeadingZeroes",
 			zoneName:     "package-01",
 			zonePath:     "intel-rapl:1",
@@ -231,8 +224,8 @@ func TestPackageZoneGetPackageID(t *testing.T) {
 			name:         "PackageZonePathWithLeadingZeroes",
 			zoneName:     "package-1",
 			zonePath:     "intel-rapl:01",
-			packageIDExp: 0,
-			err:          errors.New("package ID mismatch between zone path \"intel-rapl:01\" and zone name \"package-1\""),
+			packageIDExp: 1,
+			err:          nil,
 		},
 		{
 			name:         "PackageID_1",
@@ -246,6 +239,13 @@ func TestPackageZoneGetPackageID(t *testing.T) {
 			zoneName:     "package-10",
 			zonePath:     "intel-rapl:10",
 			packageIDExp: 10,
+			err:          nil,
+		},
+		{
+			name:         "PackagePsysGap",
+			zoneName:     "package-1",
+			zonePath:     "intel-rapl:2",
+			packageIDExp: 1,
 			err:          nil,
 		},
 	}
@@ -398,13 +398,6 @@ func (s *raplTimeSensitiveTestSuite) TestInitZoneMap() {
 				makeTestDataPath("testdata/intel-rapl-dram-domain-name-not-exist/intel-rapl:0/intel-rapl:0:0/name") + `" does not exist`),
 		},
 		{
-			name:      "MismatchPackageDomainID",
-			raplPath:  makeTestDataPath("testdata/intel-rapl-invalid-package-domain-name-id"),
-			raplZones: nil,
-			err: errors.New(`package ID mismatch between zone path "` +
-				makeTestDataPath("testdata/intel-rapl-invalid-package-domain-name-id/intel-rapl:1") + `" and zone name "package-0"`),
-		},
-		{
 			name:      "PackageCurrentEnergyAttributeFileNotExist",
 			raplPath:  makeTestDataPath("testdata/intel-rapl-package-curr-energy-attr-file-not-exist"),
 			raplZones: nil,
@@ -485,6 +478,30 @@ func (s *raplTimeSensitiveTestSuite) TestInitZoneMap() {
 					path: makeTestDataPath("testdata/intel-rapl/intel-rapl:3"),
 					energy: attrSample{
 						value:     205888075695,
+						timestamp: fakeClock.Now(),
+					},
+					subzones: make([]powerZone, 0),
+				},
+			},
+		},
+		{
+			name:     "PsysGapBetweenPackageZones",
+			raplPath: makeTestDataPath("testdata/intel-rapl-psys-gap"),
+			raplZones: map[int]powerZone{
+				0: &zone{
+					name: "package-0",
+					path: makeTestDataPath("testdata/intel-rapl-psys-gap/intel-rapl:0"),
+					energy: attrSample{
+						value:     206999074695,
+						timestamp: fakeClock.Now(),
+					},
+					subzones: make([]powerZone, 0),
+				},
+				1: &zone{
+					name: "package-1",
+					path: makeTestDataPath("testdata/intel-rapl-psys-gap/intel-rapl:2"),
+					energy: attrSample{
+						value:     205999074695,
 						timestamp: fakeClock.Now(),
 					},
 					subzones: make([]powerZone, 0),
