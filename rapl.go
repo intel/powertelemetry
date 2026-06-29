@@ -283,11 +283,7 @@ func (p *packageZone) getPackageID() (int, error) {
 	if !zoneRegex.MatchString(filepath.Base(path)) {
 		return 0, fmt.Errorf("invalid package domain zone path %q", path)
 	}
-	packageIDFromPath := strings.Split(path, ":")[1]
 
-	if packageIDFromPath != packageIDFromName {
-		return 0, fmt.Errorf("package ID mismatch between zone path %q and zone name %q", path, name)
-	}
 	return strconv.Atoi(packageIDFromName)
 }
 
