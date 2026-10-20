@@ -1,7 +1,6 @@
 # Power Telemetry Library
 
-`powertelemetry` is a Golang library that provides functionalities to get power management
-related metrics for Intel processors.
+`powertelemetry` is a Go library that provides power-management-related metrics for Intel processors.
 
 ## Metrics
 
@@ -39,20 +38,19 @@ Metric types can be distinguished based on the host topology attributes associat
 
 > **Note**: Metrics that report processor C-state residencies or power consumption are calculated over elapsed intervals.
 
-## SW Dependencies
+## Software Dependencies
 
 ### Kernel modules
 
 The library is mostly based on Linux Kernel modules that expose specific metrics over
-`sysfs` or `devfs` interfaces. The following dependencies are expected by
+`sysfs` or device files under `dev`. The following dependencies are expected by
 the library:
 
 - `intel-rapl` kernel module which exposes Intel Runtime Power Limiting metrics over
   `sysfs` (`/sys/devices/virtual/powercap/intel-rapl`),
 - `msr` kernel module that provides access to processor model specific
-  registers over `devfs` (`/dev/cpu/cpu%d/msr`),
-- `cpufreq` kernel module - which exposes per-CPU Frequency over `sysfs`
-  (`/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq`),
+  registers via device files under `dev` (`/dev/cpu/cpu%d/msr`),
+- `cpufreq` kernel module - which exposes per-CPU Frequency over `sysfs` (`/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq`),
 - `intel-uncore-frequency` kernel module which exposes Intel uncore frequency metrics
   over `sysfs` (`/sys/devices/system/cpu/intel_uncore_frequency`).
 
@@ -71,7 +69,7 @@ sudo modprobe intel_rapl_msr
 sudo modprobe msr
 
 # cpufreq module:
-### integrated in kernel 
+### integrated in kernel
 
 # intel-uncore-frequency module:
 ## only for kernel >= 5.6.0
@@ -110,7 +108,7 @@ Details of these dependencies are discussed above:
 | `InitialUncoreFrequencyMax`           | Package/Die    | `intel-uncore-frequency` kernel module         |
 | `CustomizedUncoreFrequencyMin`        | Package/Die    | `intel-uncore-frequency` kernel module         |
 | `CustomizedUncoreFrequencyMax`        | Package/Die    | `intel-uncore-frequency` kernel module         |
-| `CPUBaseFrequency`                    | Package/Die    | `msr` kernel module                            |
+| `CPUBaseFrequency`                    | Package        | `msr` kernel module                            |
 | `CPUFrequency`                        | CPU            | `cpufreq` kernel module                        |
 | `CPUC0StateResidency`                 | CPU            | `msr` kernel module                            |
 | `CPUC1StateResidency`                 | CPU            | `msr` kernel module                            |
@@ -144,7 +142,7 @@ sudo setcap cap_sys_rawio,cap_dac_read_search+ep <path_to_application>
 sudo setcap cap_sys_rawio,cap_dac_read_search,cap_sys_admin+ep <path_to_application>
 ```
 
-## HW Dependencies
+## Hardware Dependencies
 
 Specific metrics require certain processor features to be present, otherwise
 this library won't be able to read them. The user can detect supported
@@ -267,7 +265,7 @@ The following processor properties are required by the library:
 
 ### Initialization
 
-`powertelemetry` library implements optional builder pattern. It allows the user to specify configuration parameters, and the dependencies to initialize needed to provide metrics information via `WithX` exported functions.
+`powertelemetry` library implements optional builder pattern. Use the exported `WithX` functions to configure which dependencies to initialize.
 
 ```go
 ptel, err := New(opts...)
@@ -278,7 +276,7 @@ Supported options are:
 - `WithCoreFrequency`: Option that enables access to metrics which rely on `cpufreq` kernel module.
 - `WithMsr`: Option that enables access to metrics which rely on `msr` kernel module.
 - `WithMsrTimeout`: Same as `WithMsr`, but it accepts an additional argument to specify the timeout for MSR reads.
-- `WithIncludedCPUs/WithExcludedCPUs`: Option that allows to specify which logical CPU ID have access to `msr` and `cpufreq` kernel modules and `perf_events` kernel interface, by inclusion or exclusion. Notice that only one of these options can be used during instantiation. When omitted, all logical CPUs from host topology are accessible.
+- `WithIncludedCPUs/WithExcludedCPUs`: Option that allows to specify which logical CPU IDs have access to `msr` and `cpufreq` kernel modules and `perf_events` kernel interface, by inclusion or exclusion. Notice that only one of these options can be used during instantiation. When omitted, all logical CPUs from host topology are accessible.
 - `WithRapl`: Option that enables access to metrics which rely on `rapl` kernel module.
 - `WithUncoreFrequency`: Option that enables access to metrics which rely on `intel-uncore-frequency` kernel module.
 - `WithPerf`: Option that enables access to metrics which rely on `perf_events` kernel interface. It takes the path of a JSON file with perf event definitions specific for the host's CPU model. Files can be found in [`perfmon`](https://github.com/intel/perfmon) repository.
@@ -291,7 +289,7 @@ Refer to [Dependencies of metrics on system configuration](#dependencies-of-metr
 This example uses options to enable all supported metrics. Additionally, uses `WithIncludedCPUs` to limit the CPU IDs that can be used to retrieve metrics which rely on `msr` and `cpufreq` kernel modules.
 
 ```go
-pt, err := powertelemetry.New(
+ptel, err := powertelemetry.New(
     powertelemetry.WithIncludedCPUs([]int{0, 1, 2, 3}),
     powertelemetry.WithMsr(),
     powertelemetry.WithCoreFrequency(),
@@ -306,7 +304,7 @@ pt, err := powertelemetry.New(
 This example uses options to enable metrics which rely on `msr` and `cpufreq` kernel modules. Additionally, uses `WithExcludedCPUs` to exclude CPU IDs that can be used to retrieve these metrics.
 
 ```go
-pt, err := powertelemetry.New(
+ptel, err := powertelemetry.New(
     powertelemetry.WithExcludedCPUs([]int{0, 1, 2, 3}),
     powertelemetry.WithMsr(),
     powertelemetry.WithCoreFrequency(),
@@ -317,7 +315,7 @@ pt, err := powertelemetry.New(
 
 `powertelemetry` provides exported methods to get metric values defined in the [Metrics](#metrics) section. These methods accept an argument depending on the metric type.
 
-The exported method to get metric values have the following naming convention:
+The exported methods to get metric values have the following naming convention:
 
 ```go
 // CPU metric type.
@@ -326,7 +324,7 @@ func (ptel *PowerTelemetry) Get<metric_name>(cpuID int) (<value_type>, error)
 // Package metric type.
 func (ptel *PowerTelemetry) Get<metric_name>(packageID int) (<value_type>, error)
 
-// Package/die metric type.
+// Package/Die metric type.
 func (ptel *PowerTelemetry) Get<metric_name>(packageID, dieID int) (<value_type>, error)
 ```
 
@@ -337,7 +335,7 @@ Where:
 
 There are several types of metrics depending on how values are calculated:
 
-- Instantaneous: The metric value corresponds to the time the specific instant in which the method is called.
+- Instantaneous: The metric value corresponds to the specific instant in which the method is called.
 - Elapsed interval: The metric value corresponds to a specific time interval.
 
 ### Instantaneous Metrics
@@ -359,7 +357,7 @@ Following are the metrics that provide instantaneous values:
 
 ```go
 // CPU temperature metric
-cpuTemp, err := pt.GetCPUTemperature(cpuID)
+cpuTemp, err := ptel.GetCPUTemperature(cpuID)
 if err != nil {
   // handle error
 }
@@ -388,31 +386,31 @@ The elapsed time interval is automatically calculated between subsequent calls t
 
 ### Metrics relying on `rapl`
 
-The following example shows how to retrieve the value of power related metrics based on `rapl` kernel module.
+The following example shows how to retrieve the value of power-related metrics based on `rapl` kernel module.
 
 #### Example: Get metrics which rely on `rapl` kernel module
 
 ```go
 // First read of metrics at init (t0).
-ptel, err := ptel.New(WithRapl())
+ptel, err := powertelemetry.New(powertelemetry.WithRapl())
 if err != nil {
   // handle error
 }
 
 // Method call at t1. Metric value corresponds to time interval t1-t0.
-powerInterval1, err := pt.GetCurrentPackagePowerConsumptionWatts(packageID)
+powerInterval1, err := ptel.GetCurrentPackagePowerConsumptionWatts(packageID)
 if err != nil {
   // handle error
 }
 
 // Method call at t2. Metric value corresponds to time interval t2-t1.
-powerInterval2, err := pt.GetCurrentPackagePowerConsumptionWatts(packageID)
+powerInterval2, err := ptel.GetCurrentPackagePowerConsumptionWatts(packageID)
 if err != nil {
   // handle error
 }
 ```
 
-> **Note**: The first metric reading operation happens at initialization, when `WithRapl`option is present.
+> **Note**: The first metric reading operation happens at initialization, when `WithRapl` option is present.
 
 ### Metrics relying on `msr`
 
@@ -422,7 +420,7 @@ C-state residency metrics need an additional method call to `UpdatePerCPUMetrics
 
 ```go
 // First offset reading of MSR registers (call to UpdatePerCPUMetrics) at init (t0).
-ptel, err := ptel.New(WithMsr())
+ptel, err := powertelemetry.New(powertelemetry.WithMsr())
 if err != nil {
   // handle error
 }
@@ -468,19 +466,19 @@ if err := ptel.ReadPerfEvents(); err != nil {
   return
 }
 
-// Get GetCPUC0SubstateC01Percent corresponding to previous elapsed interval.
+// GetCPUC0SubstateC01Percent value corresponding to previous elapsed interval.
 c0SubstateC01, err := ptel.GetCPUC0SubstateC01Percent(cpuID)
 if err != nil {
   // handle error
 }
 
-// Get GetCPUC0SubstateC02Percent corresponding to previous elapsed interval.
+// GetCPUC0SubstateC02Percent value corresponding to previous elapsed interval.
 c0SubstateC02, err := ptel.GetCPUC0SubstateC02Percent(cpuID)
 if err != nil {
   // handle error
 }
 
-// Get GetCPUC0SubstateC0WaitPercent corresponding to previous elapsed interval.
+// GetCPUC0SubstateC0WaitPercent value corresponding to previous elapsed interval.
 c0SubstateC0Wait, err := ptel.GetCPUC0SubstateC0WaitPercent(cpuID)
 if err != nil {
   // handle error
@@ -527,28 +525,28 @@ if err != nil {
 Typical scenarios that return a `MultiError` type would be:
 
 - Requesting a dependency, but the corresponding kernel module was not loaded previously.
-- Provide invalid paths to `WithX` options that allow to specify custom path used to initialize the dependencies.
-- Provide invalid JSON file for perf event definitions via `WithPerf`.
+- Providing invalid paths to `WithX` options that allow to specify custom path used to initialize the dependencies.
+- Providing invalid JSON file for perf event definitions via `WithPerf`.
 
 #### Usage of `ModuleNotInitializedError`
 
-Calls to a [get metric method](#get-metric-values) return an error of type `ModuleNotInitializedError` if the dependency to which it relies on, has not been initialized via the corresponding `WithX` option, or it failed to initialize.
+Calls to a [get metric method](#get-metric-values) return an error of type `ModuleNotInitializedError` if the dependency on which it relies, has not been initialized via the corresponding `WithX` option, or it failed to initialize.
 
 This might be used to:
 
 - Prevent subsequent calls to metrics relying on the same dependency.
-- Prevent subsequent calls to the same metric getter, when looping through multiple logical CPU IDs or package/die IDs.
+- Prevent subsequent calls to the same metric getter, when looping through multiple logical CPU IDs or Package/Die IDs.
 
-##### Example: `ModuleNotInitializedError` error handling for CPU frequency metric
+##### Example: `ModuleNotInitializedError` error handling for CPU Frequency metric
 
 ```go
-// CPU current frequency metric
+// Current CPU Frequency metric
 cpuID := 0
 cpuFreq, err := ptel.GetCPUFrequency(cpuID)
 
 var moduleErr *powertelemetry.ModuleNotInitializedError
 if err != nil {
-  if !errors.As(err, &moduleErr) {
+  if errors.As(err, &moduleErr) {
     // Handle module not initialized error
   }
   // Handle other error types
@@ -557,7 +555,7 @@ if err != nil {
 
 #### Usage of `MetricNotSupportedError`
 
-As mentioned in [HW Dependencies](#hw-dependencies) section, specific metrics require certain processor features to be present, or specific processor models.
+As mentioned in [Hardware Dependencies](#hardware-dependencies) section, specific metrics require certain processor features to be present, or specific processor models.
 
 `powertelemetry` library provides exported functions that allow the user to check if a metric is supported by the CPU. If not supported, a `MetricNotSupportedError` is returned, for the user to handle it.
 
@@ -575,7 +573,7 @@ This might be used to disable metric requests based on CPU model compatibility.
 var notSupportedErr *powertelemetry.MetricNotSupportedError
 
 err := ptel.CheckIfCPUC1StateResidencySupported(cpuModel)
-if err != nil && errors.As(err, &notSupportedErr)
+if err != nil && errors.As(err, &notSupportedErr) {
   // handle not supported metric error
 }
 ```
